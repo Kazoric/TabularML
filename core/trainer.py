@@ -221,3 +221,36 @@ class Trainer:
     
     def get_final_metrics(self) -> dict:
         return self.best_epoch_metrics
+
+    def reset(self, model: nn.Module) -> None:
+        """
+        Reset the Trainer state for a new fold or new training session.
+        
+        Args:
+            model (nn.Module): A fresh model instance to attach to this Trainer.
+        """
+        self.model = model.to(self.device)
+
+        # Recreate optimizer
+        self.optimizer = self.optimizer.__class__(
+            self.model.parameters(),
+            lr=self.lr,
+            **self.optimizer_params
+        )
+
+        # Recreate scheduler
+        if self.scheduler_params:
+            self.scheduler = self.scheduler.__class__(self.optimizer, **self.scheduler_params)
+
+        # Reset losses and metrics
+        self.train_loss = []
+        self.valid_loss = []
+        self.lr_history = []
+
+        self.train_metrics = {name: [] for name in self.metrics}
+        self.valid_metrics = {name: [] for name in self.metrics}
+
+        # Reset best validation tracking
+        self.best_val_loss = float('inf')
+        self.best_epoch_metrics = {}
+        self.start_epoch = 0

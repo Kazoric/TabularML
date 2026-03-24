@@ -32,3 +32,17 @@ def roc_auc_torch(y_true, y_pred):
     auc = torch.trapz(tpr, fpr)
 
     return auc
+
+@register_metric("accuracy")
+def accuracy_torch(y_true, y_pred):
+    # Binary classification
+    if y_pred.ndim == 1 or y_pred.shape[1] == 1:
+        y_pred_labels = (y_pred.flatten() >= 0.5).long()
+    else:
+        # Multi-classification
+        y_pred_labels = torch.argmax(y_pred, dim=1)
+
+    y_true_labels = y_true.flatten().long()
+    correct = (y_pred_labels == y_true_labels).sum()
+    accuracy = correct.float() / y_true_labels.numel()
+    return accuracy

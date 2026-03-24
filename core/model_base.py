@@ -3,8 +3,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.optim.lr_scheduler import SequentialLR, LinearLR
+import numpy as np
+from sklearn.model_selection import KFold
 from abc import ABC, abstractmethod
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -83,284 +85,46 @@ class TabularModel(ABC):
         
         return self.trainer.evaluate(val_loader)
 
-
-# class TabularModel(ABC):
-#     """
-#     Base class for all models. Provides common functionality and attributes.
-    
-#     """
-    
-#     def __init__(
-#         self,
-#         config: ModelConfig,
-#     ) -> None:
-#         """
-#         Initialize the Model object.
-
-#         """
-
-#         self.config = config
+    def cross_validation_train(self, train_loader: DataLoader, epochs: int = 10, k: int = 5) -> None:
+        """
+        Train the model for a specified number of epochs using k-fold cross-validation.
         
-#         # Set device to CPU or GPU if available
-#         self.device = config.device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        Args:
+            train_loader (DataLoader): Training data loader
+            epochs (int): Number of epochs to train for
+            k (int): Number of folds for cross-validation
+        """
+        train_dataset = train_loader.dataset
+        batch_size = train_loader.batch_size
 
-#         # Set number of classes
-#         self.num_classes = config.num_classes
-#         self.dataset_name = config.dataset_name
+        kfold = KFold(n_splits=k, shuffle=True, random_state=42)
+        losses = []
+        all_scores = {}
+
+        for fold, (train_idx, val_idx) in enumerate(kfold.split(train_dataset)):
+            self.model = self.build_model().to(self.device)
+            self.trainer.reset(self.model)
+            print(f"Fold {fold+1}/{k}")
+            train_subset = Subset(train_dataset, train_idx)
+            val_subset = Subset(train_dataset, val_idx)
+            train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+            val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+            self.train(train_loader, val_loader, epochs)
+            loss = self.trainer.get_final_metrics()['val_loss']
+            losses.append(loss)
+            fold_metrics = self.trainer.get_final_metrics()['valid_metrics']
+            print(f"Fold {fold+1} metrics:")
+            for metric_name, value in fold_metrics.items():
+                if metric_name not in all_scores:
+                    all_scores[metric_name] = []
+                all_scores[metric_name].append(value.item())
+                print(f"{metric_name}: {value.item()}")
+            print("\n")
         
-#         # Build and move model to device
-#         self.model = self.build_model().to(self.device)
-
-#         # Generate run ID if not provided
-#         if run_id is None:
-#             date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-#             run_id = f"{self.name}_{dataset_name}_{date}"
-#         self.run_id = run_id
-        
-#         # Initialize criterion (cross-entropy loss with label smoothing)
-#         self.criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-        
-#         # Set metrics
-#         self.metrics = metrics
-
-#         # Initialize optimizer (default is Adam)
-#         if optimizer_cls is None:
-#             optimizer_cls = Adam
-#         if optimizer_params is None:
-#             optimizer_params = {}
-#         self.optimizer_name = optimizer_cls.__name__
-#         self.optimizer_params = optimizer_params
-
-#         # Initialize learning rate and optimizer
-#         self.lr = lr
-#         self.optimizer = optimizer_cls(self.model.parameters(), lr=lr, **optimizer_params)
-
-#         # Initialize scheduler
-#         self.scheduler = None
-#         self.scheduler_name = None
-#         self.scheduler_params = {}
-
-#         if scheduler_cls is not None:
-            
-#             # Parameters for the main scheduler
-#             main_scheduler_params = scheduler_params or {}
-            
-#             # Warm up
-#             if warm_up:
-                
-#                 # Ensure the optimizer's LR is indeed our LR_MAX
-#                 lr_max = self.lr
-#                 lr_start = lr_max * 0.05
-                
-#                 # The LinearLR will handle the factor multiplication: LR_MAX * 0.05 -> LR_MAX * 1.0
-#                 self.optimizer.param_groups[0]['lr'] = lr_max
-
-#                 # Warm-up Scheduler (LinearLR)
-#                 warmup_scheduler = LinearLR(
-#                     self.optimizer,
-#                     start_factor=0.05,
-#                     end_factor=1.0,
-#                     total_iters=warm_up_epochs
-#                 )
-
-#                 # Main Scheduler (e.g., CosineAnnealingLR)
-#                 main_scheduler = scheduler_cls(self.optimizer, **main_scheduler_params)
-                
-#                 # Build the SequentialLR
-#                 self.scheduler = SequentialLR(
-#                     self.optimizer,
-#                     schedulers=[warmup_scheduler, main_scheduler],
-#                     milestones=[warm_up_epochs]
-#                 )
-#                 self.scheduler_name = SequentialLR.__name__
-#                 self.scheduler_params = {
-#                     "warmup_epochs": warm_up_epochs,
-#                     "main_scheduler": scheduler_cls.__name__,
-#                     "main_params": main_scheduler_params,
-#                     "milestones": [warm_up_epochs]
-#                 }
-                
-#                 print(f"INFO: Warm-up enabled. Initial LR {lr_start:.6f} -> Max LR {lr_max:.6f} for {warm_up_epochs} epochs.")
-
-#             # No warm up
-#             else:
-#                 self.scheduler = scheduler_cls(self.optimizer, **main_scheduler_params)
-#                 self.scheduler_name = scheduler_cls.__name__
-#                 self.scheduler_params = main_scheduler_params
-
-#         # # Initialize scheduler (optional)
-#         # if scheduler_cls is not None:
-#         #     self.scheduler_name = scheduler_cls.__name__
-#         #     if scheduler_params is None:
-#         #         scheduler_params = {}
-#         #     self.scheduler = scheduler_cls(self.optimizer, **scheduler_params)
-#         #     self.scheduler_params = scheduler_params
-#         # else:
-#         #     self.scheduler = None
-#         #     self.scheduler_name = None
-#         #     self.scheduler_params = {}
-
-#         # Initialize checkpoint manager
-#         self.checkpoint = CheckpointManager(
-#             model=self.model,
-#             optimizer=self.optimizer,
-#             run_id=run_id,
-#             model_name=self.name
-#         )
-
-#         # Initialize trainer
-#         self.trainer = Trainer(
-#             model=self.model,
-#             optimizer=self.optimizer,
-#             criterion=self.criterion,
-#             device=self.device,
-#             save=save,
-#             checkpoint_fn=self.checkpoint.save,
-#             scheduler=self.scheduler,
-#             metrics=metrics,
-#             num_classes=self.num_classes
-#         )
-
-#         # Initialize predictor
-#         self.predictor = Predictor(self.model, self.device)
-
-#         # Initialize best validation loss and checkpoint path
-#         self.best_val_loss = float('inf')
-#         self.checkpoint_path = "./checkpoints/"
-#         self.start_epoch = 0
-
-#     @abstractmethod
-#     def build_model(self) -> nn.Module:
-#         """
-#         Abstract method to build the model. Must be implemented by subclasses.
-        
-#         Returns:
-#             nn.Module: The built model
-#         """
-#         pass
-
-#     def train(self, train_loader: DataLoader, val_loader: Optional[DataLoader] = None, epochs: int = 10) -> None:
-#         """
-#         Train the model for a specified number of epochs.
-        
-#         Args:
-#             train_loader (DataLoader): Training data loader
-#             val_loader (DataLoader): Validation data loader (optional)
-#             epochs (int): Number of epochs to train for
-#         """
-        
-#         self.trainer.train(train_loader, val_loader, epochs)
-
-#     def evaluate(self, val_loader: DataLoader) -> float:
-#         """
-#         Evaluate the model on a validation set.
-        
-#         Args:
-#             val_loader (DataLoader): Validation data loader
-            
-#         Returns:
-#             float: Model performance metric (e.g., accuracy or loss)
-#         """
-        
-#         return self.trainer.evaluate(val_loader)
-
-#     def predict(self, inputs: torch.Tensor, return_probs: bool = False) -> torch.Tensor:
-#         """
-#         Make predictions on a given input.
-        
-#         Args:
-#             inputs (torch.Tensor): Input tensor
-#             return_probs (bool): Whether to return class probabilities instead of labels
-            
-#         Returns:
-#             torch.Tensor: Predicted labels or class probabilities
-#         """
-        
-#         return self.predictor.predict(inputs, return_probs=return_probs)
-    
-#     def predict_on_loader(self, dataloader: DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
-#         """
-#         Make predictions on a data loader.
-        
-#         Args:
-#             dataloader (DataLoader): Data loader to make predictions on
-            
-#         Returns:
-#             tuple: Tuple containing true labels and predicted labels
-#         """
-        
-#         all_preds = []
-#         all_labels = []
-
-#         for inputs, labels in dataloader:
-#             preds = self.predict(inputs)
-#             all_preds.append(preds)
-#             all_labels.append(labels)
-
-#         y_pred = torch.cat(all_preds)
-#         y_true = torch.cat(all_labels)
-#         return y_true, y_pred.cpu()
-
-#     def load_checkpoint(self, load_optimizer: bool = True) -> None:
-#         """
-#         Load the latest checkpoint.
-        
-#         Returns:
-#             bool: Whether loading was successful
-#         """
-        
-#         success = self.checkpoint.load_latest(load_optimizer)
-#         if success:
-#             self.trainer.start_epoch = self.checkpoint.start_epoch
-#             self.trainer.best_val_loss = self.checkpoint.best_val_loss
-
-#     def save_hyperparams(
-#         self,
-#         batch_size: int,
-#         num_epochs: int
-#     ) -> None:
-#         """
-#         Save hyperparameters and results to a JSON file.
-        
-#         Args:
-#             optimizer_name (str): Name of the optimizer
-#             optimizer_params (dict): Parameters for the optimizer
-#             scheduler_name (str): Name of the scheduler
-#             scheduler_params (dict): Parameters for the scheduler
-#             batch_size (int): Batch size used during training
-#             num_epochs (int): Number of epochs trained for
-#         """
-
-#         final_best_metrics = self.trainer.get_final_metrics()
-        
-#         meta = {
-#             "model_name": self.name,
-#             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-#             "dataset_name": self.dataset_name,
-#             "num_classes": self.num_classes,
-#             "batch_size": batch_size,
-#             "learning_rate": self.lr,
-#             "num_epochs": num_epochs,
-#             "optimizer": self.optimizer_name,
-#             "optimizer_params": self.optimizer_params,
-#             "scheduler": self.scheduler_name,
-#             "scheduler_params": self.scheduler_params,
-#             "metrics": list(self.metrics.keys()),
-#             "model_params": self.get_model_specific_params(),
-#             "best_validation_results": final_best_metrics
-#         }
-
-#         path = os.path.join(f"experiments/{self.run_id}", "meta.json")
-#         with open(path, "w") as f:
-#             json.dump(meta, f, indent=4)
-#         print(f"Hyperparameters saved to file: {path}")
-
-#     def get_model_specific_params(self) -> Dict[str, Any]:
-#         """
-#         Abstract method to retrieve model-specific parameters. Must be implemented by subclasses.
-        
-#         Returns:
-#             dict: Model-specific parameters
-#         """
-        
-#         raise NotImplementedError("Each model must define get_model_specific_params()")
+        mean_loss = np.mean(losses)
+        std_loss = np.std(losses)
+        print(f"Loss: {mean_loss:.4f} ± {std_loss:.4f}")
+        for metric_name, values in all_scores.items():
+            mean_val = np.mean(values)
+            std_val = np.std(values)
+            print(f"{metric_name}: {mean_val:.4f} ± {std_val:.4f}")
