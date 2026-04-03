@@ -22,8 +22,12 @@ class FullyConnected(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(n_inputs, 64),
             nn.ReLU(),
+            nn.BatchNorm1d(64),
+            nn.Dropout(0.1),
             nn.Linear(64, 64),
             nn.ReLU(),
+            nn.BatchNorm1d(64),
+            nn.Dropout(0.1),
             nn.Linear(64, output_dim)
         )
 
