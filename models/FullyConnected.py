@@ -31,15 +31,12 @@ class FullyConnected(nn.Module):
             nn.Linear(64, output_dim)
         )
 
-        self.output = nn.Sigmoid()
-
     def forward(self, X_cat, X_num):
         cat_embeddings = [embedding(X_cat[:, i]) for i, embedding in enumerate(self.embeddings)]
         cat_out = torch.cat(cat_embeddings, dim=1)
 
         x = torch.cat([cat_out, X_num], dim=1)
         x = self.layers(x)
-        x = self.output(x)
         return x
         
 
@@ -58,7 +55,7 @@ class FullyConnectedModel(TabularModel):
         ]
 
         n_numerical_features = config.n_numeric_features
-        output_dim = 1
+        output_dim = config.output_dim
         
         # This dictionary is the "recipe" to recreate the model instance later.
         self.params = {
