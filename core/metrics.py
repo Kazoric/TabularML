@@ -87,3 +87,23 @@ def balanced_accuracy_torch(y_true, y_pred):
     # 3. Balanced Accuracy is the mean of recalls
     balanced_acc = torch.mean(torch.stack(recalls))
     return balanced_acc
+
+def confusion_matrix_torch(y_true: torch.Tensor, y_pred: torch.Tensor, num_classes: int) -> torch.Tensor:
+    """
+    Compute the confusion matrix of a model.
+    
+    Args:
+        y_true (torch.Tensor): Ground truth labels
+        y_pred (torch.Tensor): Predicted labels
+        num_classes (int): Number of classes
+        
+    Returns:
+        torch.Tensor: Confusion matrix
+    """
+    
+    # Initialize tensor to store confusion matrix
+    indices = num_classes * y_true + y_pred
+    cm = torch.bincount(indices, minlength=num_classes*num_classes)
+    cm = cm.reshape(num_classes, num_classes)
+    
+    return cm

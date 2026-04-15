@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple, Callable
 
 # Import custom modules
 from core.trainer import Trainer
-# from core.predictor import Predictor
+from core.predictor import Predictor
 # from core.checkpoint import CheckpointManager
 from core.config import ModelConfig, TrainerConfig
 
@@ -48,7 +48,7 @@ class TabularModel(ABC):
         )
 
         # Initialize predictor
-        # self.predictor = Predictor(self.model, self.device)
+        self.predictor = Predictor(self.model, self.device)
 
     @abstractmethod
     def build_model(self) -> nn.Module:
@@ -128,3 +128,40 @@ class TabularModel(ABC):
             mean_val = np.mean(values)
             std_val = np.std(values)
             print(f"{metric_name}: {mean_val:.4f} ± {std_val:.4f}")
+
+    def predict(self, inputs_cat: torch.Tensor, inputs_num: torch.Tensor, return_probs: bool = False) -> torch.Tensor:
+        """
+        Make predictions on a given input.
+        
+        Args:
+            inputs (torch.Tensor): Input tensor
+            return_probs (bool): Whether to return class probabilities instead of labels
+            
+        Returns:
+            torch.Tensor: Predicted labels or class probabilities
+        """
+        
+        return self.predictor.predict(inputs_cat, inputs_num, return_probs=return_probs)
+
+    def predict_on_loader(self, dataloader: DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Make predictions on a data loader.
+        
+        Args:
+            dataloader (DataLoader): Data loader to make predictions on
+            
+        Returns:
+            tuple: Tuple containing true labels and predicted labels
+        """
+        
+        all_preds = []
+        all_labels = []
+
+        for inputs_cat, inputs_num, labels in dataloader:
+            preds = self.predict(inputs_cat, inputs_num)
+            all_preds.append(preds)
+            all_labels.append(labels)
+
+        y_pred = torch.cat(all_preds)
+        y_true = torch.cat(all_labels)
+        return y_true, y_pred.cpu()
