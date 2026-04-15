@@ -120,7 +120,7 @@ class Trainer:
             # Compute and store metrics
             metric_outputs = self._compute_metrics(all_labels, all_outputs)
             for name, value in metric_outputs.items():
-                self.train_metrics[name].append(value)
+                self.train_metrics[name].append(value.cpu())
 
             # Print training metrics
             metrics_str = " | ".join(f"{name}: {value:.4f}" for name, value in metric_outputs.items())
@@ -200,7 +200,7 @@ class Trainer:
         # Compute and store metrics
         metric_outputs = self._compute_metrics(all_labels, all_outputs)
         for name, value in metric_outputs.items():
-            self.valid_metrics[name].append(value)
+            self.valid_metrics[name].append(value.cpu())
 
         # Print validation metrics
         metrics_str = " | ".join(f"{name}: {value:.4f}" for name, value in metric_outputs.items())

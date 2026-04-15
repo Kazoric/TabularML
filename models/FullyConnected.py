@@ -20,15 +20,19 @@ class FullyConnected(nn.Module):
         n_inputs = n_embeddings_output + n_numerical_features
         
         self.layers = nn.Sequential(
-            nn.Linear(n_inputs, 64),
+            nn.Linear(n_inputs, 128),
+            nn.ReLU(),
+            nn.BatchNorm1d(128),
+            nn.Dropout(0.1),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.BatchNorm1d(64),
             nn.Dropout(0.1),
-            nn.Linear(64, 64),
+            nn.Linear(64, 32),
             nn.ReLU(),
-            nn.BatchNorm1d(64),
+            nn.BatchNorm1d(32),
             nn.Dropout(0.1),
-            nn.Linear(64, output_dim)
+            nn.Linear(32, output_dim)
         )
 
     def forward(self, X_cat, X_num):
